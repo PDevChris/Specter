@@ -8,11 +8,9 @@ use pocketmine\entity\Entity;
 use pocketmine\event\Listener;
 use pocketmine\event\player\PlayerIllegalMoveEvent;
 use pocketmine\math\Vector3;
-use pocketmine\network\mcpe\protocol\AnimatePacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
 use pocketmine\network\mcpe\protocol\PlayerActionPacket;
 use pocketmine\network\mcpe\protocol\RespawnPacket;
-use pocketmine\network\mcpe\protocol\TextPacket;
 use pocketmine\player\Player;
 use pocketmine\plugin\PluginBase;
 use pocketmine\utils\TextFormat;
@@ -30,6 +28,11 @@ class Specter extends PluginBase implements Listener {
     }
 
     public function onCommand(CommandSender $sender, Command $command, string $label, array $args): bool {
+        if (!$sender->hasPermission("specter.use")) {
+            $sender->sendMessage(TextFormat::RED . "You do not have permission to use this command.");
+            return true;
+        }
+        
         if (!isset($args[0])) return false;
         
         switch ($args[0]) {
@@ -39,9 +42,9 @@ class Specter extends PluginBase implements Listener {
             case 's':
                 if (!isset($args[1])) return false;
                 if ($this->interface->openSession($args[1], $args[2] ?? "SPECTER", (int)($args[3] ?? 19133))) {
-                    $sender->sendMessage("Session started.");
+                    $sender->sendMessage(TextFormat::GREEN . "Session started.");
                 } else {
-                    $sender->sendMessage("Failed to open session");
+                    $sender->sendMessage(TextFormat::RED . "Failed to open session.");
                 }
                 return true;
             
@@ -50,14 +53,15 @@ class Specter extends PluginBase implements Listener {
             case 'close':
             case 'q':
                 if (!isset($args[1])) {
-                    $sender->sendMessage("Usage: /specter quit <player>");
+                    $sender->sendMessage(TextFormat::YELLOW . "Usage: /specter quit <player>");
                     return true;
                 }
                 $player = $this->getServer()->getPlayerExact($args[1]);
                 if ($player instanceof SpecterPlayer) {
-                    $player->disconnect("client disconnect.");
+                    $player->disconnect("Client disconnect.");
+                    $sender->sendMessage(TextFormat::GREEN . "Player " . $args[1] . " has been kicked.");
                 } else {
-                    $sender->sendMessage("That player isn't managed by specter.");
+                    $sender->sendMessage(TextFormat::RED . "That player isn't managed by Specter.");
                 }
                 return true;
             
@@ -66,26 +70,28 @@ class Specter extends PluginBase implements Listener {
             case 'teleport':
             case 'tp':
                 if (!isset($args[4])) {
-                    $sender->sendMessage("Usage: /specter move <player> <x> <y> <z>");
+                    $sender->sendMessage(TextFormat::YELLOW . "Usage: /specter move <player> <x> <y> <z>");
                     return true;
                 }
                 $player = $this->getServer()->getPlayerExact($args[1]);
                 if ($player instanceof SpecterPlayer) {
+                    $position = new Vector3((float)$args[2], (float)$args[3] + $player->getEyeHeight(), (float)$args[4]);
                     $pk = MovePlayerPacket::create(
                         $player->getId(),
-                        new Vector3((float)$args[2], (float)$args[3] + $player->getEyeHeight(), (float)$args[4]),
+                        $position,
                         0, 0, 0, 0, 0, 0, null
                     );
                     $this->interface->queueReply($pk, $player->getName());
+                    $sender->sendMessage(TextFormat::GREEN . "Moved " . $args[1] . " to " . implode(", ", [$args[2], $args[3], $args[4]]) . ".");
                 } else {
-                    $sender->sendMessage("That player isn't managed by specter.");
+                    $sender->sendMessage(TextFormat::RED . "That player isn't managed by Specter.");
                 }
                 return true;
             
             case 'respawn':
             case 'r':
                 if (!isset($args[1])) {
-                    $sender->sendMessage("Usage: /specter respawn <player>");
+                    $sender->sendMessage(TextFormat::YELLOW . "Usage: /specter respawn <player>");
                     return true;
                 }
                 $player = $this->getServer()->getPlayerExact($args[1]);
@@ -94,11 +100,12 @@ class Specter extends PluginBase implements Listener {
                         $this->interface->queueReply(new RespawnPacket(), $player->getName());
                         $respawnPK = PlayerActionPacket::create($player->getId(), PlayerActionPacket::ACTION_RESPAWN, 0, 0, 0);
                         $this->interface->queueReply($respawnPK, $player->getName());
+                        $sender->sendMessage(TextFormat::GREEN . "Respawned " . $player->getName() . ".");
                     } else {
-                        $sender->sendMessage("{$player->getName()} doesn't need respawning.");
+                        $sender->sendMessage(TextFormat::YELLOW . "{$player->getName()} doesn't need respawning.");
                     }
                 } else {
-                    $sender->sendMessage("That player isn't a specter player");
+                    $sender->sendMessage(TextFormat::RED . "That player isn't a Specter player.");
                 }
                 return true;
         }
