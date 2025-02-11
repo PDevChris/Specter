@@ -1,4 +1,7 @@
----
-autoRespawn: true
-allowIllegalMoves: true
-...
+# Specter Configuration File
+
+allowIllegalMoves: false
+maxSpecterPlayers: 10
+autoRemoveTimeout: 300  # Seconds (5 minutes)
+debug: false
+defaultPort: 19133
