@@ -1,18 +1,23 @@
 name: Specter
-version: "0.9"
+version: "1.0"
 author: Falkirks
 main: specter\Specter
-api: ["3.14","3.15","3.16","3.17","3.18"]
-mcpe-protocol: [407, 408, 419, 422, 428]
+api: ["5.0.0"]
+mcpe-protocol: [503, 527, 534, 545]  # Updated protocol versions for PM 5.x
 softdepend: ["iControlU"]
+
 commands:
   specter:
+    description: Manage Specter players (spawn, move, respawn, quit)
     usage: /specter <action> <player> [params]
     permission: specter.command
-    aliases: ['s']
+    aliases: ["s"]
+
 permissions:
   specter:
+    description: "Base permission for Specter commands"
     default: op
     children:
       specter.command:
+        description: "Allows using the /specter command"
         default: op
