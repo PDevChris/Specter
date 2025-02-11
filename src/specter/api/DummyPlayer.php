@@ -19,18 +19,11 @@ class DummyPlayer {
         }
     }
 
-    /**
-     * Get the SpecterPlayer instance if available.
-     * @return SpecterPlayer|null
-     */
     public function getPlayer(): ?SpecterPlayer {
         $player = $this->server->getPlayerExact($this->name);
         return ($player instanceof SpecterPlayer) ? $player : null;
     }
 
-    /**
-     * Close the dummy player session.
-     */
     public function close(): void {
         $player = $this->getPlayer();
         if ($player !== null) {
@@ -38,11 +31,6 @@ class DummyPlayer {
         }
     }
 
-    /**
-     * Get the active Specter plugin instance.
-     * @return Specter
-     * @throws \RuntimeException
-     */
     protected function getSpecter(): Specter {
         $plugin = $this->server->getPluginManager()->getPlugin("Specter");
 
