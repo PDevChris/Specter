@@ -1,14 +1,13 @@
 <?php
-
 namespace specter\network;
 
 use pocketmine\network\mcpe\NetworkSession;
-use pocketmine\network\mcpe\protocol\ProtocolInfo;
-use pocketmine\network\mcpe\protocol\ServerboundPacket;
-use pocketmine\network\mcpe\NetworkInterface;
+use pocketmine\network\mcpe\protocol\LoginPacket;
+use pocketmine\Server;
 use specter\Specter;
+use specter\network\SpecterPlayer;
 
-class SpecterInterface implements NetworkInterface {
+class SpecterInterface {
     private Specter $plugin;
     private array $sessions = [];
 
@@ -16,47 +15,30 @@ class SpecterInterface implements NetworkInterface {
         $this->plugin = $plugin;
     }
 
-    public function start(): void {}
-
-    public function shutdown(): void {}
-
     public function openSession(string $name, string $address, int $port): bool {
-        if (isset($this->sessions[$name])) {
-            return false; // Session already exists
+        $maxPlayers = $this->plugin->getConfig()->get("maxSpecterPlayers", 10);
+
+        if (count($this->sessions) >= $maxPlayers) {
+            $this->plugin->getLogger()->warning("Cannot create Specter player: Max limit reached ($maxPlayers).");
+            return false;
         }
 
-        $this->sessions[$name] = new SpecterPlayer($this, $address, $port);
+        $server = Server::getInstance();
+        $player = new SpecterPlayer($this, $address, $port);
+        $player->setName($name);
+        $server->addOnlinePlayer($player);
+
+        $this->sessions[$name] = $player;
         return true;
     }
 
-    public function closeSession(NetworkSession $session, string $reason = "Client disconnect."): void {
-        foreach ($this->sessions as $name => $specterPlayer) {
-            if ($specterPlayer === $session) {
-                unset($this->sessions[$name]);
-                break;
-            }
-        }
-    }
-
-    public function queueReply(ServerboundPacket $packet, string $name): void {
+    public function removeSession(string $name): void {
         if (isset($this->sessions[$name])) {
-            $this->sessions[$name]->handleDataPacket($packet);
+            unset($this->sessions[$name]);
         }
     }
 
-    public function putPacket(NetworkSession $session, ServerboundPacket $packet, bool $needACK = false, int $reliability = 0): ?int {
-        return null; // Specter doesn't send actual packets over the network
-    }
-
-    public function setName(string $name): void {}
-
-    public function tick(): void {}
-
-    public function getProtocolVersion(): int {
-        return ProtocolInfo::CURRENT_PROTOCOL;
-    }
-
-    public function getName(): string {
-        return "SpecterInterface";
+    public function getSpecterPlayers(): array {
+        return $this->sessions;
     }
 }
