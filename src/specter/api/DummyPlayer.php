@@ -1,48 +1,55 @@
 <?php
+
 namespace specter\api;
 
 use pocketmine\Server;
 use specter\network\SpecterPlayer;
 use specter\Specter;
 
-class DummyPlayer{
-    private $server;
-    public function __construct($name, $address = "SPECTER", $port = 19133, Server $server = null){
+class DummyPlayer {
+    private Server $server;
+    private string $name;
+
+    public function __construct(string $name, string $address = "SPECTER", int $port = 19133, ?Server $server = null) {
         $this->name = $name;
-        $this->server = $server === null ? Server::getInstance() : $server;
-        if(!$this->getSpecter()->getInterface()->openSession($name, $address, $port)){
-            throw new \Exception("Failed to open session.");
+        $this->server = $server ?? Server::getInstance();
+
+        if (!$this->getSpecter()->getInterface()->openSession($name, $address, $port)) {
+            throw new \RuntimeException("Failed to open session for player: $name.");
         }
     }
-	/**
-	 * @return null|SpecterPlayer
-	 */
-    public function getPlayer(){
-        $p = $this->server->getPlayer($this->name);
-        if($p instanceof SpecterPlayer){
-            return $p;
-        }
-        else{
-            return null;
-        }
-    }
-    public function close(){
-        $p = $this->getPlayer();
-        if($p !== null) {
-            $p->close("", "client disconnect.");
-        }
-    }
+
     /**
-     * @return null|Specter
-     * @throws \Exception
+     * Get the SpecterPlayer instance if available.
+     * @return SpecterPlayer|null
      */
-    protected function getSpecter(){
+    public function getPlayer(): ?SpecterPlayer {
+        $player = $this->server->getPlayerExact($this->name);
+        return ($player instanceof SpecterPlayer) ? $player : null;
+    }
+
+    /**
+     * Close the dummy player session.
+     */
+    public function close(): void {
+        $player = $this->getPlayer();
+        if ($player !== null) {
+            $player->close("", "Client disconnect.");
+        }
+    }
+
+    /**
+     * Get the active Specter plugin instance.
+     * @return Specter
+     * @throws \RuntimeException
+     */
+    protected function getSpecter(): Specter {
         $plugin = $this->server->getPluginManager()->getPlugin("Specter");
+
         if ($plugin instanceof Specter && $plugin->isEnabled()) {
             return $plugin;
         }
-        else{
-            throw new \Exception("Specter is not available.");
-        }
+
+        throw new \RuntimeException("Specter plugin is not available or disabled.");
     }
 }
