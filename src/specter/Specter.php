@@ -1,213 +1,127 @@
 <?php
 
+declare(strict_types=1);
+
 namespace specter;
 
-use icontrolu\iControlU;
+use pocketmine\plugin\PluginBase;
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
-use pocketmine\entity\Entity;
-use pocketmine\event\entity\EntityDamageByEntityEvent;
 use pocketmine\event\Listener;
-use pocketmine\event\player\cheat\PlayerIllegalMoveEvent;
+use pocketmine\event\entity\EntityDamageByEntityEvent;
+use pocketmine\event\player\PlayerIllegalMoveEvent;
 use pocketmine\math\Vector3;
-use pocketmine\network\mcpe\protocol\AnimatePacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
 use pocketmine\network\mcpe\protocol\PlayerActionPacket;
 use pocketmine\network\mcpe\protocol\RespawnPacket;
 use pocketmine\network\mcpe\protocol\TextPacket;
-use pocketmine\Player;
-use pocketmine\plugin\PluginBase;
+use pocketmine\player\Player;
 use pocketmine\utils\TextFormat;
-use specter\network\SpecterInterface;
-use specter\network\SpecterPlayer;
 
-class Specter extends PluginBase implements Listener
-{
-    /** @var  SpecterInterface */
-    private $interface;
+class Specter extends PluginBase implements Listener {
+    private static Specter $instance;
+    private SpecterInterface $interface;
 
-    public function onEnable()
-    {
-        $this->saveDefaultConfig();
+    public function onEnable(): void {
+        self::$instance = $this;
         $this->interface = new SpecterInterface($this);
-        $this->getServer()->getNetwork()->registerInterface($this->interface);
+        $this->getServer()->getNetwork()->setInterfaces([$this->interface]);
         $this->getServer()->getPluginManager()->registerEvents($this, $this);
     }
 
-    /**
-     * @param CommandSender $sender
-     * @param Command $command
-     * @param string $label
-     * @param string[] $args
-     *
-     * @return bool
-     */
-    public function onCommand(CommandSender $sender, Command $command, string $label, array $args): bool
-    {
-        if (isset($args[0])) {
-            switch ($args[0]) {
-                case 'spawn':
-                case 'new':
-                case 'add':
-                case 's':
-                    if (isset($args[1])) {
-                        if ($this->getInterface()->openSession($args[1], $args[2] ?? "SPECTER", $args[3] ?? 19133)) {
-                            $sender->sendMessage("Session started.");
-                        } else {
-                            $sender->sendMessage("Failed to open session");
-                        }
-                        return true;
-                    }
-                    return false;
-                case 'kick':
-                case 'quit':
-                case 'close':
-                case 'q':
-                    if (isset($args[1])) {
-                        $player = $this->getServer()->getPlayer($args[1]);
-                        if ($player instanceof SpecterPlayer) {
-                            $player->close("", "client disconnect.");
-                        } else {
-                            $sender->sendMessage("That player isn't managed by specter.");
-                        }
-                    } else {
-                        $sender->sendMessage("Usage: /specter quit <p>");
-                    }
+    public static function getInstance(): Specter {
+        return self::$instance;
+    }
+
+    public function onCommand(CommandSender $sender, Command $command, string $label, array $args): bool {
+        if (!$sender instanceof Player) {
+            $sender->sendMessage(TextFormat::RED . "This command must be used in-game.");
+            return true;
+        }
+        
+        switch ($command->getName()) {
+            case "specter":
+                if (empty($args)) {
+                    $sender->sendMessage(TextFormat::YELLOW . "Usage: /specter <spawn|move|attack|chat|respawn>");
                     return true;
-                case 'move':
-                case 'm':
-                case 'teleport':
-                case 'tp':
-                    if (isset($args[4])) {
-                        $player = $this->getServer()->getPlayer($args[1]);
-                        if ($player instanceof SpecterPlayer) {
-                            $pk = new MovePlayerPacket();
-                            $pk->position = new Vector3($args[2], $args[3] + $player->getEyeHeight(), $args[4]);
-                            $pk->yaw = $player->getYaw() + 10; //This forces movement even if the movement is not large enough
-                            $pk->pitch = 0;
-                            $this->interface->queueReply($pk, $player->getName());
-                        } else {
-                            $sender->sendMessage("That player isn't managed by specter.");
+                }
+                
+                $subCommand = array_shift($args);
+                switch ($subCommand) {
+                    case "spawn":
+                        if (count($args) < 1) {
+                            $sender->sendMessage(TextFormat::RED . "Usage: /specter spawn <name>");
+                            return true;
                         }
-                    } else {
-                        $sender->sendMessage("Usage: /specter move  <p> <x> <y> <z>");
-                    }
-                    return true;
-                case 'attack':
-                case 'a':
-                    if (isset($args[2])) {
-                        $player = $this->getServer()->getPlayer($args[1]);
-                        if ($player instanceof SpecterPlayer) {
-                            if (substr($args[2], 0, 4) === "eid:") {
-                                $victimId = substr($args[2], 4);
-                                if (!is_numeric($victimId)) {
-                                    $sender->sendMessage("Usage: /specter attack <attacker> <victim>|<eid:<victim eid>>");
-                                    return true;
-                                }
-                                if (!($victim = $player->getLevel()->getEntity($victimId) instanceof Entity)) {
-                                    $sender->sendMessage("There is no entity with entity ID $victimId in {$player->getName()}'s level");
-                                    return true;
-                                }
-                            } else {
-                                $victim = $this->getServer()->getPlayer($args[2]);
-                                if ($victim instanceof Player) {
-                                    $victimId = $victim->getId();
-                                } else {
-                                    $sender->sendMessage("Player $args[2] not found");
-                                    return true;
-                                }
-                            }
-                            $damage = (float)(max(0.0, $args[3] ?? 0.0));
-                            $ev = new EntityDamageByEntityEvent($player, $victim, EntityDamageByEntityEvent::CAUSE_ENTITY_ATTACK, $damage, [], 0.0);
-                            $victim->attack($ev);
-                            $pk = new AnimatePacket();
-                            $pk->entityRuntimeId = $player->getId();
-                            $pk->action = AnimatePacket::ACTION_SWING_ARM;
-                            $this->getInterface()->queueReply($pk, $player->getName());
-                            $this->getLogger()->info(TextFormat::LIGHT_PURPLE . "{$player->getName()} attacking {$victim->getName()}(eid:{$victimId}) with {$damage} damage");
-                        } else {
-                            $sender->sendMessage("That player isn't managed by specter.");
+                        $name = array_shift($args);
+                        $this->interface->createBot($name, $sender->getPosition());
+                        $sender->sendMessage(TextFormat::GREEN . "Bot $name spawned.");
+                        break;
+                    
+                    case "move":
+                        if (count($args) < 4) {
+                            $sender->sendMessage(TextFormat::RED . "Usage: /specter move <p> <x> <y> <z>");
+                            return true;
                         }
-                    } else {
-                        $sender->sendMessage("Usage: /specter attack <attacker> [eid:]<victim> [damage]");
-                    }
-                    return true;
-                case 'c':
-                case 'chat':
-                case 'command':
-                    if (isset($args[2])) {
-                        $player = $this->getServer()->getPlayer($args[1]);
-                        if ($player instanceof SpecterPlayer) {
-                            $pk = new TextPacket();
-                            $pk->type = TextPacket::TYPE_CHAT;
-                            $pk->sourceName = "";
-                            $pk->message = implode(" ", array_slice($args, 2));
-                            $this->getInterface()->queueReply($pk, $player->getName());
-                        } else {
-                            $sender->sendMessage("That player isn't managed by specter.");
+                        [$p, $x, $y, $z] = $args;
+                        $this->interface->moveBot($p, new Vector3((float)$x, (float)$y, (float)$z));
+                        $sender->sendMessage(TextFormat::GREEN . "Bot $p moved.");
+                        break;
+                    
+                    case "attack":
+                        if (count($args) < 2) {
+                            $sender->sendMessage(TextFormat::RED . "Usage: /specter attack <attacker> <victim>");
+                            return true;
                         }
-                    } else {
-                        $sender->sendMessage("Usage: /specter chat <p> <data>");
-                    }
-                    return true;
-                case 'control': //TODO update iControlU with better support
-                case 'icu':
-                    if ($sender instanceof Player) {
-                        $icu = $this->getICU();
-                        if ($icu instanceof iControlU) {
-                            $player = $this->getServer()->getPlayer($args[1]);
-                            if ($player instanceof SpecterPlayer) {
-                                if ($icu->isControl($sender)) {
-                                    $this->getServer()->dispatchCommand($sender, "icu control " . $args[1]);
-                                } else {
-                                    $this->getServer()->dispatchCommand($sender, "icu stop ");
-                                }
-                            } else {
-                                $sender->sendMessage("That player isn't a specter player");
-                            }
-                        } else {
-                            $sender->sendMessage("You need to have iControlU to use this feature.");
+                        [$attacker, $victim] = $args;
+                        $this->interface->botAttack($attacker, $victim);
+                        $sender->sendMessage(TextFormat::GREEN . "Bot $attacker attacked $victim.");
+                        break;
+                    
+                    case "chat":
+                        if (count($args) < 2) {
+                            $sender->sendMessage(TextFormat::RED . "Usage: /specter chat <p> <message>");
+                            return true;
                         }
-                    } else {
-                        $sender->sendMessage("This command must be run in game.");
-                    }
-                    return true;
-                case "respawn":
-                case "r":
-                    if (!isset($args[1])) {
-                        $sender->sendMessage("Usage: /specter respawn <player>");
-                        return true;
-                    }
-                    $player = $this->getServer()->getPlayer($args[1]);
-                    if ($player instanceof SpecterPlayer) {
-                        if (!$player->spec_needRespawn) {
-                            $this->interface->queueReply(new RespawnPacket(), $player->getName());
-                            $respawnPK = new PlayerActionPacket();
-                            $respawnPK->action = PlayerActionPacket::ACTION_RESPAWN;
-                            $respawnPK->entityRuntimeId = $player->getId();
-                            $this->interface->queueReply($respawnPK, $player->getName());
-                        } else {
-                            $sender->sendMessage("{$player->getName()} doesn't need respawning.");
+                        $p = array_shift($args);
+                        $message = implode(" ", $args);
+                        $this->interface->botChat($p, $message);
+                        break;
+                    
+                    case "respawn":
+                        if (count($args) < 1) {
+                            $sender->sendMessage(TextFormat::RED . "Usage: /specter respawn <player>");
+                            return true;
                         }
-                    } else {
-                        $sender->sendMessage("That player isn't a specter player");
-                    }
-                    return true;
-            }
+                        $playerName = array_shift($args);
+                        $this->interface->respawnBot($playerName);
+                        break;
+                    
+                    default:
+                        $sender->sendMessage(TextFormat::RED . "Unknown subcommand.");
+                        break;
+                }
+                return true;
         }
         return false;
     }
 
-    /**
-     * @priority HIGHEST
-     * @param PlayerIllegalMoveEvent $event
-     */
-    public function onIllegalMove(PlayerIllegalMoveEvent $event)
-    {
-        if ($event->getPlayer() instanceof SpecterPlayer && $this->getConfig()->get('allowIllegalMoves')) {
-            $event->setCancelled();
+    public function onPlayerIllegalMove(PlayerIllegalMoveEvent $event): void {
+        $player = $event->getPlayer();
+        if ($this->interface->isBot($player->getName())) {
+            $event->cancel();
         }
     }
+
+    public function onEntityDamage(EntityDamageByEntityEvent $event): void {
+        $damager = $event->getDamager();
+        if ($damager instanceof Player && $this->interface->isBot($damager->getName())) {
+            $victim = $event->getEntity();
+            $this->interface->botAttack($damager->getName(), $victim->getName());
+        }
+    }
+
+
     /*
         /**
          * @priority MONITOR
@@ -230,10 +144,10 @@ class Specter extends PluginBase implements Listener
             }
         }
     */
-    /**
+    /*
      * @return SpecterInterface
      */
-    public function getInterface()
+   /* public function getInterface()
     {
         return $this->interface;
     }
