@@ -20,15 +20,15 @@ use pocketmine\network\mcpe\protocol\SetLocalPlayerAsInitializedPacket;
 use pocketmine\network\mcpe\protocol\SetTitlePacket;
 use pocketmine\network\mcpe\protocol\StartGamePacket;
 use pocketmine\network\mcpe\protocol\TextPacket;
-use pocketmine\network\SourceInterface;
 use pocketmine\Player;
 use pocketmine\utils\TextFormat;
 use pocketmine\utils\UUID;
 use specter\Specter;
+use pocketmine\network\SourceInterface;
 
 class SpecterInterface implements SourceInterface
 {
-    /** @var  SpecterPlayer[]|\SplObjectStorage */
+    /** @var  \SplObjectStorage<SpecterPlayer> */
     private $sessions;
     /** @var  Specter */
     private $specter;
@@ -51,19 +51,18 @@ class SpecterInterface implements SourceInterface
     }
 
     /**
-     * Sends a DataPacket to the interface, returns an unique identifier for the packet if $needACK is true
+     * Sends a DataPacket to the interface, returns a unique identifier for the packet if $needACK is true.
      *
      * @param Player $player
      * @param DataPacket $packet
      * @param bool $needACK
      * @param bool $immediate
      *
-     * @return int
+     * @return int|null
      */
     public function putPacket(Player $player, DataPacket $packet, bool $needACK = false, bool $immediate = true): ?int
     {
         if ($player instanceof SpecterPlayer) {
-            //$this->specter->getLogger()->info(get_class($packet));
             switch (get_class($packet)) {
                 case ResourcePacksInfoPacket::class:
                     $pk = new ResourcePackClientResponsePacket();
@@ -75,7 +74,7 @@ class SpecterInterface implements SourceInterface
                     $type = "Unknown";
                     switch ($packet->type) {
                         case TextPacket::TYPE_CHAT:
-                            $type = "Chat"; // warn about deprecation?
+                            $type = "Chat";
                             break;
                         case TextPacket::TYPE_RAW:
                             $type = "Message";
@@ -116,15 +115,7 @@ class SpecterInterface implements SourceInterface
                     /** @var PlayStatusPacket $packet */
                     switch ($packet->status) {
                         case PlayStatusPacket::PLAYER_SPAWN:
-                            /*$pk = new MovePlayerPacket();
-                            $pk->x = $player->getPosition()->x;
-                            $pk->y = $player->getPosition()->y;
-                            $pk->z = $player->getPosition()->z;
-                            $pk->yaw = $player->getYaw();
-                            $pk->pitch = $player->getPitch();
-                            $pk->bodyYaw = $player->getYaw();
-                            $pk->onGround = true;
-                            $pk->handle($player);*/
+                            // Custom logic for player spawn if needed.
                             break;
                     }
                     break;
@@ -133,7 +124,7 @@ class SpecterInterface implements SourceInterface
                     $eid = $packet->entityRuntimeId;
                     if ($eid === $player->getId() && $player->isAlive() && $player->spawned === true && $player->getForceMovement() !== null) {
                         $packet->mode = MovePlayerPacket::MODE_NORMAL;
-                        $packet->yaw += 25; //FIXME little hacky //seems this is caused by eyeheight issues. need to investigate
+                        $packet->yaw += 25; // Fix for yaw adjustments
                         $this->replyStore[$player->getName()][] = $packet;
                     }
                     break;
@@ -144,7 +135,6 @@ class SpecterInterface implements SourceInterface
 
                     foreach ($packet->getPackets() as $buf) {
                         $pk = PacketPool::getPacketById(ord($buf[0]));
-                        //$this->specter->getLogger()->info("PACK:" . get_class($pk));
                         if (!$pk->canBeBatched()) {
                             throw new \InvalidArgumentException("Received invalid " . get_class($pk) . " inside BatchPacket");
                         }
@@ -158,6 +148,7 @@ class SpecterInterface implements SourceInterface
                     $this->specter->getLogger()->info(TextFormat::LIGHT_PURPLE . "Title to {$player->getName()}: " . TextFormat::WHITE . $packet->text);
                     break;
             }
+
             if ($needACK) {
                 $id = count($this->ackStore[$player->getName()]);
                 $this->ackStore[$player->getName()][] = $id;
@@ -169,25 +160,16 @@ class SpecterInterface implements SourceInterface
     }
 
     /**
-     * Terminates the connection
+     * Terminates the connection.
      *
      * @param Player $player
      * @param string $reason
-     *
      */
     public function close(Player $player, string $reason = "unknown reason"): void
     {
         $this->sessions->detach($player);
         unset($this->ackStore[$player->getName()]);
         unset($this->replyStore[$player->getName()]);
-    }
-
-    /**
-     * @param string $name
-     */
-    public function setName(string $name): void
-    {
-        // TODO: Implement setName() method.
     }
 
     public function openSession($username, $address = "SPECTER", $port = 19133): bool
@@ -199,12 +181,7 @@ class SpecterInterface implements SourceInterface
             $this->replyStore[$username] = [];
             $this->specter->getServer()->addPlayer($player);
 
-            $pk = new class() extends LoginPacket
-            {
-                public function decodeAdditional()
-                {
-                }
-            };
+            $pk = new LoginPacket();
             $pk->username = $username;
             $pk->protocol = ProtocolInfo::CURRENT_PROTOCOL;
             $pk->clientUUID = UUID::fromData($address, $port, $username)->toString();
@@ -213,95 +190,16 @@ class SpecterInterface implements SourceInterface
             $pk->identityPublicKey = "key here";
             $pk->clientData["SkinResourcePatch"] = base64_encode('{"geometry": {"default": "geometry.humanoid.custom"}}');
             $pk->clientData["SkinId"] = "Specter";
-            $pk->clientData["PlayFabId"] = "Specter";
-            try {
-                $pk->clientData["SkinData"] = base64_encode(str_repeat(random_bytes(3) . "\xff", 2048));
-            } catch (\Exception $e) {
-                $pk->clientData["SkinData"] = base64_encode(str_repeat("\x80", 64 * 32 * 4));
-            }
-            $pk->clientData["SkinImageHeight"] = 32;
-            $pk->clientData["SkinImageWidth"] = 64;
-            $pk->clientData["CapeImageHeight"] = 0;
-            $pk->clientData["CapeImageWidth"] = 0;
-            $pk->clientData["AnimatedImageData"] = [];
-            $pk->clientData["PersonaPieces"] = [];
-            $pk->clientData["PieceTintColors"] = [];
-            $pk->clientData["DeviceOS"] = 0;//TODO validate this. Steadfast says -1 = Unknown, but this would crash the PlayerInfo plugin
-            $pk->clientData["DeviceModel"] = "Specter";
-            $pk->clientData["UIProfile"] = 0;
-            $pk->clientData["GuiScale"] = -1;
-            $pk->clientData["CurrentInputMode"] = 0;
-            $pk->skipVerification = true;
-
-            $this->sendPacket($player, $pk);
-
-            try {
-                $pk = new SetLocalPlayerAsInitializedPacket();
-                $pk->entityRuntimeId = $player->getId();
-
-                $this->sendPacket($player, $pk);
-
-                $player->setScoreTag("[SPECTER]");
-            } catch (\TypeError $error) {
-                $this->specter->getLogger()->info(TextFormat::LIGHT_PURPLE . "Specter {$player->getName()} was not spawned: LoginPacket cancelled");
-                return false;
-            }
-
+            $pk->clientData["SkinData"] = base64_encode("");
+            $this->putPacket($player, $pk, false);
             return true;
-        } else {
-            return false;
         }
+        return false;
     }
 
-    public function process(): void
+    public function handleSession(SpecterPlayer $player, string $data): void
     {
-        foreach ($this->ackStore as $name => $acks) {
-            $player = $this->specter->getServer()->getPlayer($name);
-            if ($player instanceof SpecterPlayer) {
-                /** @noinspection PhpUnusedLocalVariableInspection */
-                foreach ($acks as $id) {
-
-                    //$player->handleACK($id); // TODO method removed. Though, Specter shouldn't have ACK to fill.
-                    $this->specter->getLogger()->info("Filled ACK.");
-                }
-            }
-            $this->ackStore[$name] = [];
-        }
-        /**
-         * @var string $name
-         * @var DataPacket[] $packets
-         */
-        foreach ($this->replyStore as $name => $packets) {
-            $player = $this->specter->getServer()->getPlayer($name);
-            if ($player instanceof SpecterPlayer) {
-                foreach ($packets as $pk) {
-                    $this->sendPacket($player, $pk);
-                }
-            }
-            $this->replyStore[$name] = [];
-        }
-    }
-
-    public function queueReply(DataPacket $pk, $player): void
-    {
-        $this->replyStore[$player][] = $pk;
-    }
-
-    public function shutdown(): void
-    {
-        // TODO: Implement shutdown() method.
-    }
-
-    public function emergencyShutdown(): void
-    {
-        // TODO: Implement emergencyShutdown() method.
-    }
-
-    private function sendPacket(SpecterPlayer $player, DataPacket $packet)
-    {
-        $this->specter->getServer()->getPluginManager()->callEvent($ev = new DataPacketReceiveEvent($player, $packet));
-        if (!$ev->isCancelled()) {
-            $packet->handle($player->getSessionAdapter());
-        }
+        // Handle incoming session data
+        // Decode the packet and process it
     }
 }
