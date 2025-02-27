@@ -16,14 +16,13 @@ class DummyPlayer {
         $this->name = $name;
         $this->server = $server ?? Server::getInstance();
         
-        if (!$this->getSpecter()->getInterface()->openSession($name, $address, $port)) {
+        if (!$this->getSpecter()?->getInterface()?->openSession($name, $address, $port)) {
             throw new \Exception("Failed to open session.");
         }
     }
     
     public function getPlayer(): ?SpecterPlayer {
-        $players = $this->server->getOnlinePlayers();
-        foreach ($players as $player) {
+        foreach ($this->server->getOnlinePlayers() as $player) {
             if ($player instanceof SpecterPlayer && strcasecmp($player->getName(), $this->name) === 0) {
                 return $player;
             }
@@ -38,11 +37,8 @@ class DummyPlayer {
         }
     }
     
-    protected function getSpecter(): Specter {
+    protected function getSpecter(): ?Specter {
         $plugin = $this->server->getPluginManager()->getPlugin("Specter");
-        if ($plugin instanceof Specter && $plugin->isEnabled()) {
-            return $plugin;
-        }
-        throw new \Exception("Specter is not available.");
+        return ($plugin instanceof Specter && $plugin->isEnabled()) ? $plugin : null;
     }
 }
